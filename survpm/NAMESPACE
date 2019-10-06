@@ -1,0 +1,14 @@
+importFrom("survival", Surv)
+importFrom("survival",survfit)
+importFrom("graphics", "abline", "grid", "hist", "legend", "lines")
+importFrom("methods", "new")
+importFrom("stats", "poisson.test")
+exportPattern("^[[:alpha:]]+")
+exportMethods(
+    "plot",
+    "summary",
+    "tdepcal" 
+)
+exportClasses(
+    "SurvPM" 
+)

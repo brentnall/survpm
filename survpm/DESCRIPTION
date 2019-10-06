@@ -1,0 +1,12 @@
+Package: survpm
+Version: 0.0-1
+Date: 2019-10-04
+Title: Prognostic survival model performance analysis
+Authors@R: c(person("Adam", "Brentnall", role = c("aut", "cre"), email = "a.brentnall@qmul.ac.uk"))
+Author: Adam Brentnall [aut, cre]
+Maintainer: Adam Brentnall <a.brentnall@qmul.ac.ukt>
+Depends: R (>= 3.1.0), methods, survival
+Description: A package to evaluate the performance of prognostic risk models through time. 
+License: GPL-3
+URL: https://www.r-project.org, http://www.another.url
+BugReports: https://pkgname.bugtracker.url
