@@ -8,5 +8,5 @@ Maintainer: Adam Brentnall <a.brentnall@qmul.ac.ukt>
 Depends: R (>= 3.1.0), methods, survival
 Description: A package to evaluate the performance of prognostic risk models through time. 
 License: GPL-3
-URL: https://www.r-project.org, http://www.another.url
-BugReports: https://pkgname.bugtracker.url
+URL: https://github.com/brentnall/survpm
+BugReports: https://github.com/brentnall/survpm

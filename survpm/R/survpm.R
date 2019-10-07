@@ -1,10 +1,20 @@
+##################################################
+## LIBRARIES needed 
+##################################################
 library("survival")
-###
+
+##################################################
+## Global functions
+## General formatting functions
+##################################################
+
+## return a number with given number of decimal places, rounded to ndigits
 fn.format<-function(ind, ndigit=2)
 {
     format(round(ind,ndigit), nsmall=ndigit)
 }
 
+## format a p-value for reporting depending on number of decimal places and precision wanted
 fn.formatp<-function(ind, ndig=3)
 {
     if(length(ind)==1){
@@ -30,17 +40,25 @@ fn.formatp<-function(ind, ndig=3)
     myout
 }
 
-fn.formatCI<-function(ind, ndig=2, ci="95"){
+## format a point estimate and confidence interval of form estimate (95%CI X to Y).
+fn.formatCI<-function(ind, ndig=2, ci="95%CI"){
 
     mynum<-fn.format(ind, ndig)
 
-    paste(mynum[1], " (", ci, "%CI ", mynum[2], " to ", mynum[3], ")", sep="")
+    paste(mynum[1], " (", ci, " ", mynum[2], " to ", mynum[3], ")", sep="")
 
 }
-    
+
+
+
+########################################
+## SurvPM class definitions
+########################################
+
 ####
-## Data format needed
-## id, time, cause, hazard (number discrete time units) cause 1, 2, ... Time in same units as hazard. e.g. 1 y hazard, time in years
+## * crData format needed:
+##     - id, time, cause, hazard (number discrete time units) cause 1, 2, ... Time in same units as hazard. e.g. 1 y hazard, time in years
+
 setClass(Class="SurvPM",
          representation=representation(
              crData="data.frame",
@@ -54,38 +72,52 @@ setClass(Class="SurvPM",
              crHt="matrix")
          )
 
-## initialise object
+## initialise class object
 setMethod(
     f="initialize",
     signature="SurvPM",
     definition=function(.Object, crData, m, maxT){
-                        
-        .Object@crData <- crData[,1:3]
 
+        ## id, survival time and cause
+        .Object@crData <- crData[,1:3] 
+
+        ## expected cumulative hazard for each competing risk model
         .Object@crH <- as.matrix(crData[,4:(3+maxT*m)])
 
+        ## number of competing risks (e.g. m=1 is survival analysis)
         .Object@m<-as.integer(m)
 
+        ## number of individuals
         .Object@n = as.integer(nrow(crData))
 
+        ## maximum number of discrete time periods over which expected cumulative hazard given
         .Object@maxT<-as.integer(maxT)
 
+        ## Method to calculated overall expected number events, each cause based on cumulative hazard approach
         allhaz<-calcH(.Object)
-        
-         .Object@pmH<-allhaz[[1]]
 
+        ## Overal expected number of events assigned
+        .Object@pmH<-allhaz[[1]]
+
+        ## Overall expected number of events per time period assigned
         .Object@crhaz<-allhaz[[2]]
-        
+
+        ## Calculate overall calibration table based on exact Poisson etc
         .Object@resOEtot<-calcOE(.Object)
-        
+
+        ## Calculate time dependent expected cumulative hazard for each cause (i.e. through followup time, at each event or when model hazard may change (discrete time interval).
         .Object@crHt <-tdepcal(.Object)
 
+        ## Initialise
         return(.Object)
         
         }
 )
 
-## Friendly interface to object
+## Friendly interface to S4 object
+## - df: data frame with specific strucutre
+## - m: number of competing risk causes
+## - maxT: maximum number of discrete time periods in model expected risks
 spm<- survpm <- function(df, m, maxT){
     thisspm<- new(
         Class="SurvPM",
@@ -97,14 +129,15 @@ spm<- survpm <- function(df, m, maxT){
     return(thisspm)
     }
 
-
-## define function that can calc cumulative hazards for cause-specific model projections
+## Class method define. Not intended for users (internal)
+## Will define a function that can calculate cumulative hazards for cause-specific model projections
 setGeneric(
     name="calcH",
     def=function(object){standardGeneric("calcH")}
     )
 
-## calc cum Hazards overall
+## Class method implement
+## Calculate cumulative Hazards overall and by time interval
 setMethod(
     f="calcH",
     signature="SurvPM",
@@ -119,7 +152,7 @@ setMethod(
         
         mycumH<-matrix(0, ncol=object@m, nrow= nid)
 
-        myhaz<-matrix(0, ncol=object@m*object@maxT, nrow=nid) ## add
+        myhaz<-matrix(0, ncol=object@m*object@maxT, nrow=nid) 
         
         for(idx in 1:(object@m)){ ## competing risks
             
@@ -151,12 +184,14 @@ setMethod(
  }       
 )
 
-## define function that can calc cumulative hazards for cause-specific model projections
+## Class method define. Not intended for users (internal)
+## Will be a function that can calc cumulative hazards for cause-specific model projections
 setGeneric(
     name="calcOE",
     def=function(object){standardGeneric("calcOE")}
-    )
-## calc O/E overall
+)
+## Class method implement
+## Calculate calibration statistics, O/E overall
 setMethod(
     f="calcOE",
     signature="SurvPM",
@@ -180,7 +215,8 @@ setMethod(
     }
 )
 
-## define function that can calc cumulative hazards for cause-specific model projections over follow-up time (each event or when hazard function changes)
+## Class method definition. Not intended for users (internal)
+## Defines function that can calc cumulative hazards for cause-specific model projections over follow-up time (each event or when hazard function changes)
 setGeneric(
     name="calcHt",
     def=function(object){standardGeneric("calcHt")}
@@ -190,6 +226,7 @@ setMethod(
     f="calcHt",
     signature="SurvPM",
     definition=function(object){
+        
     ## unique times when event or hazard changes in model
     myz<-sort(unique(c(object@crData$t, 1:object@maxT))) ##add when hazard changes each time unit
 
@@ -208,10 +245,6 @@ setMethod(
 
     ## hazard from time point idz to idz+1
     fn.intervalH<-function(myH, myh, idz){
-
-        ##debug
-##        myH<-object@crH[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-  ##      myh<-object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
         
         myHstart<- myH[ myzidx[idz]+1 ] + myzrem[idz] * myh[myzidx[idz]+1]
 
@@ -228,10 +261,6 @@ setMethod(
     for(idx in 1:object@m){
 
         for(idy in 1:object@n){
-
-            ##debug
-            ##    idx<-1 # first hazard function
-            ## idy<-1 # first id
 
             for(idz in 1:(lastrisk[idy]-1)){
 
@@ -262,16 +291,19 @@ setMethod(
 
     }
 )
-##function to do time dependent calibration analysis
+
+## Class method definition. Not intended for users (internal)
+## Will define a function to calculations that enable a time-dependent calibration analysis
 setGeneric(
     name="tdepcal",
     def=function(object){standardGeneric("tdepcal")}
     )
-## details
+## Class method implement.
 setMethod(
     f="tdepcal",
     signature="SurvPM",
     definition=function(object){
+
         ## unique times when event or hazard changes in model
         myz<-sort(unique(c(object@crData$t, 1:object@maxT))) ##add when hazard changes each time unit
         
@@ -290,11 +322,7 @@ setMethod(
         
         ## hazard from time point idz to idz+1
         fn.intervalH<-function(myH, myh, idz){
-            
-            ##debug
-            ##        myH<-object@crH[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-            ##      myh<-object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-        
+                    
             myHstart<- myH[ myzidx[idz]+1 ] + myzrem[idz] * myh[myzidx[idz]+1]
             
             myHend<- myH[ myzidx[idz+1]+1 ] + myzrem[idz+1] * myh[myzidx[idz+1]+1]
@@ -310,11 +338,7 @@ setMethod(
         for(idx in 1:object@m){
 
             for(idy in 1:object@n){
-                
-                ##debug
-                ##    idx<-1 # first hazard function
-                ## idy<-1 # first id
-                
+                    
                 for(idz in 1:(lastrisk[idy]-1)){
                     
                     myzH[idz ,idx] <- myzH[idz ,idx] + fn.intervalH(
@@ -347,8 +371,7 @@ setMethod(
 
 
 
-
-
+## Summary method implementation (for users).
 setMethod(
     f="summary",
     signature="SurvPM",
@@ -358,7 +381,7 @@ setMethod(
     }
 )
 
-## plot method
+## Plot method implementation (for users)
 setMethod(
     f="plot",
     signature="SurvPM",
