@@ -51,13 +51,26 @@ fn.formatCI<-function(ind, ndig=2, ci="95%CI"){
 
 
 
+
 ########################################
 ## SurvPM class definitions
 ########################################
 
 ####
 ## * crData format needed:
-##     - id, time, cause, hazard (number discrete time units) cause 1, 2, ... Time in same units as hazard. e.g. 1 y hazard, time in years
+##     - id, time, cause, hazard (number discrete time units) cause 1, 2, ..., then covariates used in formula (if supplied)
+##Time in same units as hazard. e.g. 1 y hazard, time in years
+## inX - covariates, including grp for risk subgroups
+
+## Check validity of class
+checkSurvPM <- function(object) {
+
+    errors <- character()
+
+    if (length(errors) == 0) TRUE else errors
+}
+
+
 
 setClass(Class="SurvPM",
          representation=representation(
@@ -69,14 +82,23 @@ setClass(Class="SurvPM",
              maxT = "integer",
              pmH = "matrix",
              resOEtot="data.frame",
-             crHt="matrix")
+             resOEtime="list",
+             crHt="matrix",
+             inX="data.frame",
+             nX="integer",
+             adjform="character",
+             ctime="logical"
+             ),
+         validity = checkSurvPM
          )
+
+
 
 ## initialise class object
 setMethod(
     f="initialize",
     signature="SurvPM",
-    definition=function(.Object, crData, m, maxT){
+    definition=function(.Object, crData, m, maxT, ctime, adjform){
 
         ## id, survival time and cause
         .Object@crData <- crData[,1:3] 
@@ -93,6 +115,26 @@ setMethod(
         ## maximum number of discrete time periods over which expected cumulative hazard given
         .Object@maxT<-as.integer(maxT)
 
+        ## whether analysis through time sought
+        .Object@ctime <- as.logical(ctime)
+        
+        ## adjustment formula
+        .Object@adjform <- as.character(adjform)
+        
+        ## covariates for group check etc, if supplied
+        if(ncol(crData) > 3+maxT*m) {
+
+            .Object@inX <- crData[ , (3+maxT*m + 1) : ncol(crData)]
+
+            .Object@nX <- ncol(.Object@inX)
+
+        }
+        else {
+            
+            .Object@nX <- 0
+
+        }
+
         ## Method to calculated overall expected number events, each cause based on cumulative hazard approach
         allhaz<-calcH(.Object)
 
@@ -107,7 +149,10 @@ setMethod(
 
         ## Calculate time dependent expected cumulative hazard for each cause (i.e. through followup time, at each event or when model hazard may change (discrete time interval).
         .Object@crHt <-tdepcal(.Object)
-
+        
+        if(ctime==TRUE){
+            .Object@resOEtime <- calcOEt(.Object)
+        }
         ## Initialise
         return(.Object)
         
@@ -118,12 +163,14 @@ setMethod(
 ## - df: data frame with specific strucutre
 ## - m: number of competing risk causes
 ## - maxT: maximum number of discrete time periods in model expected risks
-spm<- survpm <- function(df, m, maxT){
+spm<- survpm <- function(df, m, maxT, ctime=FALSE, adjform = ""){
     thisspm<- new(
         Class="SurvPM",
         crData=df,
         m=as.integer(m),
-        maxT=as.integer(maxT)
+        maxT=as.integer(maxT),
+        ctime=as.logical(ctime),
+        adjform=as.character(adjform)
     )
 
     return(thisspm)
@@ -185,7 +232,7 @@ setMethod(
 )
 
 ## Class method define. Not intended for users (internal)
-## Will be a function that can calc cumulative hazards for cause-specific model projections
+## Overall calibration (O/E) based on cumulative hazards for cause-specific model projections
 setGeneric(
     name="calcOE",
     def=function(object){standardGeneric("calcOE")}
@@ -215,6 +262,150 @@ setMethod(
     }
 )
 
+## Class method define. Not intended for users (internal)
+## Time dependent calibration (O/E) based on cumulative hazards for cause-specific model projections
+setGeneric(
+    name="calcOEt",
+    def=function(object){standardGeneric("calcOEt")}
+)
+## Class method implement
+## Calculate time dependent calibration statistics, O/E 
+setMethod(
+    f="calcOEt",
+    signature="SurvPM",
+    definition=function(object){
+
+        ## unique times when  hazard changes in model
+        myz<-0:object@maxT 
+        
+        nz<-object@maxT
+
+        lastrisk<-floor(object@crData$t)
+
+        ntot<-sum(lastrisk+1)
+        
+        myzrem<-object@crData$t - lastrisk
+
+        mydtafit <- data.frame( matrix(NA, ncol = 3 + object@m + object@nX, nrow=ntot ) ) #id, time, hazard cr1, hazard cr2, .. (etc if m>1), outcome, fixed X
+
+        colnames(mydtafit) <- c("id", "t", paste("h", 1 : object@m, sep=""), "J", colnames( object@inX) )
+
+        ## id (as integer)
+        mydtafit[, 1] <- rep(1:object@n, lastrisk + 1) 
+
+        ## time period (integer)
+        mydtafit[, 2] <- unlist(sapply(lastrisk + 1, function(ind) 1 : ind)) 
+
+        ## covariates
+        mydtafit[, (3 + object@m) : (3 + object@m + object@nX) ] <- myspm@inX[ rep( row.names( myspm@inX ), lastrisk+1),]
+        
+        ## add hazards
+        for(idx in 1:object@m){ #loops thru competing risks
+
+            mycounter<-0 ## initialise - mycounter is current position on time-dept survival model data frame
+            
+            for(idy in 1:object@n){ ##loop through individuals
+
+                if( lastrisk[idy]>0 ){ #if one complete time period at start
+                    for(idz in 1 : (lastrisk[idy]) ){ #loop through time periods at risk 
+        
+                        mycounter <- mycounter + 1
+
+                        mydtafit[mycounter, 2 + idx] <- object@crhaz[idy, idz + (idx - 1) * object@maxT]##hazard
+                    }
+                }
+
+               
+
+                ##last period which might be not whole
+                mycounter <- mycounter + 1
+
+                mydtafit[mycounter, 2 + idx] <- myzrem[idy] * object@crhaz[idy, lastrisk[idy] + 1 + (idx - 1) * object@maxT]##haazard while at risk
+
+            }
+            
+        }
+        
+        ##event for each person position in the data
+        myposlast<-cumsum(1+lastrisk)
+
+        ## competing risk cause, init
+        mydtafit$J <- 0
+
+        ## competing risk cause last time period
+        mydtafit$J[myposlast] <- object@crData$d
+
+        ##formulas for calibration check models
+        myformula<-vector("list", 5)
+
+        ##1. calibration in the large
+        myformula[[1]]<- as.formula("(mydtafit$J==idx) ~ offset(log (mydtafit[,2+idx]) )")
+
+        ##2. calibration slope
+        myformula[[2]] <- as.formula("(mydtafit$J==idx) ~ log (mydtafit[,2+idx])")
+
+        ##3. overall calibration plus time
+        myformula[[3]]<- as.formula( "(mydtafit$J==idx) ~ mydtafit$t + offset(log(mydtafit[,2+idx]))" )
+
+        ##4. calibration slope plus time
+        myformula[[4]]<- as.formula( "(mydtafit$J==idx) ~ mydtafit$t + log (mydtafit[,2+idx])" )
+
+        ##5. subgroups / user adjustments plus time, if user supplied formula
+        if(object@adjform!=""){
+            
+            myformula[[5]] <- as.formula( paste( c("(mydtafit$J==idx) ~ t +", object@adjform, "+ offset(log(mydtafit[,2+idx]))") ))
+            
+        }
+        
+
+        #return coefficients and confidence intervals only
+        fn.formatglm<-function(inglm){
+
+            ## if problems with convergence, return NA (i.e. v small or large calib coefs)
+            if( (sum( coef(inglm) < -6) > 0 )  | sum( coef(inglm) > 5 ) >0 ){
+
+                myout<-matrix(NA, ncol=3, nrow=length( coef(inglm) ) )
+
+            } else {
+
+                myout<-cbind(coef(inglm), confint.default(inglm) )
+
+            }
+            return(myout)
+            
+        }
+            
+        ##initilise
+        myglm <- vector("list", object@m)
+        
+        for(idx in 1 : object@m){
+
+            ## initialise
+            myglm[[idx]]<- vector("list", 5)
+            
+            for(idy in 1 : 4){
+
+                thisglm<-  glm( myformula[[idy]] , mydtafit, family=poisson)
+
+                myglm[[idx]][[idy]] <- fn.formatglm( thisglm )
+
+            }
+
+            ##IF adjmodel provided
+            if(object@adjform != ""){
+
+                myglm[[idx]][[5]] <- fn.formatglm( glm( myformula[[5]], mydtafit, family=poisson) )
+
+            }
+
+        }
+            
+        return(myglm)
+        
+    }
+)
+
+
 ## Class method definition. Not intended for users (internal)
 ## Defines function that can calc cumulative hazards for cause-specific model projections over follow-up time (each event or when hazard function changes)
 setGeneric(
@@ -238,8 +429,6 @@ setMethod(
     myz<-c(0,myz); myzidx<-c(0,myzidx); myzrem<-c(0,myzrem)
 
     nz<-length(myz)
-
-    myz0<-myz; nz0<-nz
 
     lastrisk<-sapply(object@crData$t, function(idx) which(myz==idx))
 
@@ -316,8 +505,6 @@ setMethod(
         
         nz<-length(myz)
         
-        myz0<-myz; nz0<-nz
-        
         lastrisk<-sapply(object@crData$t, function(idx) which(myz==idx))
         
         ## hazard from time point idz to idz+1
@@ -376,9 +563,73 @@ setMethod(
     f="summary",
     signature="SurvPM",
     definition=function(object){
-        print("**Calibration, overall**")
+
+        ##function to format matrix with calib coefs
+        fn.formatCIm<-function(ind, ndig=2, notxt=TRUE)
+            {
+                ind.fmt <- fn.format(exp(ind), ndig)
+
+                if(nrow(ind.fmt)==1){
+
+                    thisout<- paste(ind.fmt[1], " (", ind.fmt[2], " to ", ind.fmt[3], ")", sep="") 
+                    
+                } else {
+                
+                    thisout <- paste(ind.fmt[,1], " (", ind.fmt[,2], " to ", ind.fmt[,3], ")", sep="") 
+                }
+
+                return(thisout)
+                
+            }
+
+        
+        
+        print("**Calibration, overall, exact Poisson test**")
+
         print(object@resOEtot)
+
+        ## analysis through time done
+        if(object@ctime){
+
+            for(idx in 1 : object@m){
+                print(paste(c("---->> Cause", idx) ))
+                
+                print("**Calibration, overall, Poisson regression model**")
+                thisout<-fn.formatCIm( object@resOEtime[[idx]][[1]] )
+                print(thisout)
+
+                print("**Calibration, slope, Poisson regression model**")
+                thisout<-fn.formatCIm( object@resOEtime[[idx]][[2]] )
+                thisoutm<-data.frame(c("Overall", "Slope"), thisout)
+                colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
+                print(thisoutm)
+
+                print("**Calibration, overall + time, Poisson regression model**")
+                thisout<-fn.formatCIm( object@resOEtime[[idx]][[3]] )
+                thisoutm<-data.frame(c("Overall", "Follow-up"), thisout)
+                colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
+                print(thisoutm)
+
+                print("**Calibration, overall + time, Poisson regression model**")
+                thisout<-fn.formatCIm( object@resOEtime[[idx]][[4]] )
+                thisoutm<-data.frame(c("Overall", "Follow-up", "Slope"), thisout)
+                colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
+                print(thisoutm)
+
+                if(object@adjform != ""){
+                    print("**Calibration, bespoke, Poisson regression model**")
+                    thisout<-fn.formatCIm( object@resOEtime[[idx]][[5]] )
+                    thisrownames<-rownames(object@resOEtime[[idx]][[5]])
+                    thisoutm<-data.frame(c("Overall", "Follow-up", thisrownames[3:length(thisrownames)]), thisout)
+                    colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
+                    print(thisoutm)
+                }
+            }
+
+        }
+
     }
+
 )
 
 ## Plot method implementation (for users)
@@ -392,7 +643,7 @@ setMethod(
         
         myNA2<-survfit(Surv(T,CC)~1, plotdta)
         
-        myrt<-myNA2$n.event /myNA2$n.risk
+        myrt<-myNA2$n.event / myNA2$n.risk
         
         mysig<-sqrt(cumsum(myNA2$n.event / (myNA2$n.risk^2)))
         
@@ -464,3 +715,16 @@ setMethod(
     }
 )
 
+
+#############debug
+############################                                                                                                                                                                                     
+mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)), grp1=c(rep(0,10), rep(1,11)), grp2=as.factor(rep(c(1,2,3), each=7)))
+
+colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""), "x1", "x2")
+
+myspm<-survpm(mysumdta, 2, 21)
+
+myspm<-survpm(mysumdta, 2, 21, TRUE, "x1 + x2")
+summary(myspm)
+
+plot(myspm, idx=2)
