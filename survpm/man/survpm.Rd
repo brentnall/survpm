@@ -8,10 +8,10 @@ Define a prognostic survival model object.
 }
 \description{
 %%  ~~ A concise (1-5 lines) description of what the function does. ~~
-This creates an object to calculate performance measures for prognostic survival models. In the base case the model may just be for the sub-hazard related to the endpoint of interest. The methods may also be applied to competing risks. For example, where there is competing mortality and a disease. Or more generally, with competing risks. It assumes discrete hazards from the risk model over time, but the survival time is continuous.
+This creates an object to calculate performance measures for prognostic survival models. The analysis may be used for survival analysis or competing risks sub-hazard models. Risk models are assumed to provide constant hazards over certain periods or time, or be reasonably approximated for performance analaysis when this is assumed. The survival times may be in continuous time. 
 }
 \usage{
-survpm(df, m, maxT)
+survpm(df, m, maxT, ctime = FALSE, adjform = "")
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -25,8 +25,14 @@ The number of risks (e.g. survival analysis m=1).
 }
   \item{maxT}{
 %%     ~~Describe \code{maxT} here~~
-The maximum number of time periods.
+The maximum number of time periods (model taken to have constant hazard in each time interval).
 }
+  \item{ctime}{
+Whether to do analysis through follow-up time or not.
+  }
+  \item{adjform}{
+Additional terms to add to Poisson regression for follow-up through time model (if wanted). 
+  }
 }
 \details{
 %%  ~~ If necessary, more details than the description above ~~
@@ -58,10 +64,18 @@ In development.
 }
 \examples{
 ## demo data
-mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)))
-colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""))
-## create spm object
+mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)), grp1=c(rep(0,10), rep(1,11)), grp2=as.factor(rep(c(1,2,3), each=7)))
+
+colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""), "x1", "x2")
+
 myspm<-survpm(mysumdta, 2, 21)
+
+## x1 + x2 adds this formula to the bespoke Poisson regression for time-dependent follow-up
+myspm<-survpm(mysumdta, 2, 21, TRUE, "x1 + x2")
+summary(myspm)
+
+plot(myspm, idx=2)
+
 }
 % Add one or more standard keywords, see file 'KEYWORDS' in the
 % R documentation directory.

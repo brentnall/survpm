@@ -3,10 +3,11 @@
 \alias{calcH}
 \alias{calcHt}
 \alias{calcOE}
+\alias{calcOEt}
 \alias{fn.format}
 \alias{fn.formatCI}
 \alias{fn.formatp}
-
+\alias{checkSurvPM}
 \docType{package}
 \title{
 \packageTitle{survpm}

@@ -10,7 +10,11 @@
 \describe{
 
 \item{\code{signature(object = "SurvPM")}}{
-Prints out a summary of the prognostic performance. Presently just overall calibration (observed vs expected).
+Prints out a summary of the prognostic performance. 
+
+1. Overall calibration (observed vs expected).
+2. (optional) Time-dependent calibration analysis (observed vs expected).
+
 %%  ~~describe this method here~~
 }
 }}

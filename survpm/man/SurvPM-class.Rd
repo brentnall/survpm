@@ -5,6 +5,7 @@
 \alias{calcH,SurvPM-method}
 \alias{calcHt,SurvPM-method}
 \alias{calcOE,SurvPM-method}
+\alias{calcOEt,SurvPM-method}
 \alias{initialize,SurvPM-method}
 
 \title{Class \code{"SurvPM"}}
@@ -26,7 +27,13 @@ Objects can be created by calls of the form \code{new("SurvPM", crData, m, maxT)
     \item{\code{maxT}:}{Object of class \code{"integer"} ~~ }
     \item{\code{pmH}:}{Object of class \code{"matrix"} ~~ }
     \item{\code{resOEtot}:}{Object of class \code{"data.frame"} ~~ }
+    \item{\code{resOEtime}:}{Object of class \code{"logical"} ~~ }
     \item{\code{crHt}:}{Object of class \code{"matrix"} ~~ }
+    \item{\code{inX}:}{Object of class \code{"data.frame"} ~~ }
+    \item{\code{nX}:}{Object of class \code{"integer"} ~~ ~~ }
+    \item{\code{adjform}:}{Object of class \code{"character"} ~~ }
+    \item{\code{ctime}:}{Object of class \code{"logical"} ~~ }
+
   }
 }
 \section{Methods}{
@@ -34,6 +41,7 @@ Objects can be created by calls of the form \code{new("SurvPM", crData, m, maxT)
     \item{calcH}{\code{signature(object = "SurvPM")}: ... }
     \item{calcHt}{\code{signature(object = "SurvPM")}: ... }
     \item{calcOE}{\code{signature(object = "SurvPM")}: ... }
+    \item{calcOEt}{\code{signature(object = "SurvPM")}: ... }
     \item{initialize}{\code{signature(.Object = "SurvPM")}: ... }
     \item{plot}{\code{signature(x = "SurvPM")}: ... }
     \item{summary}{\code{signature(object = "SurvPM")}: ... }

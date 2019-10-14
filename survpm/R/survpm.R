@@ -126,12 +126,12 @@ setMethod(
 
             .Object@inX <- crData[ , (3+maxT*m + 1) : ncol(crData)]
 
-            .Object@nX <- ncol(.Object@inX)
+            .Object@nX <- as.integer( ncol(.Object@inX) )
 
         }
         else {
             
-            .Object@nX <- 0
+            .Object@nX <- as.integer(0)
 
         }
 
@@ -297,7 +297,7 @@ setMethod(
         mydtafit[, 2] <- unlist(sapply(lastrisk + 1, function(ind) 1 : ind)) 
 
         ## covariates
-        mydtafit[, (3 + object@m) : (3 + object@m + object@nX) ] <- myspm@inX[ rep( row.names( myspm@inX ), lastrisk+1),]
+        mydtafit[, (3 + object@m) : (3 + object@m + object@nX) ] <- object@inX[ rep( row.names( object@inX ), lastrisk+1),]
         
         ## add hazards
         for(idx in 1:object@m){ #loops thru competing risks
@@ -716,15 +716,3 @@ setMethod(
 )
 
 
-#############debug
-############################                                                                                                                                                                                     
-mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)), grp1=c(rep(0,10), rep(1,11)), grp2=as.factor(rep(c(1,2,3), each=7)))
-
-colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""), "x1", "x2")
-
-myspm<-survpm(mysumdta, 2, 21)
-
-myspm<-survpm(mysumdta, 2, 21, TRUE, "x1 + x2")
-summary(myspm)
-
-plot(myspm, idx=2)
