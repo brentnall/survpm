@@ -163,6 +163,8 @@ setMethod(
 ## - df: data frame with specific strucutre
 ## - m: number of competing risk causes
 ## - maxT: maximum number of discrete time periods in model expected risks
+## - ctime: whether to do the performance analysis through follow-up time or not
+## - adjform: additional adjustment terms for Poisson regression (when ctime TRUE)
 spm<- survpm <- function(df, m, maxT, ctime=FALSE, adjform = ""){
     thisspm<- new(
         Class="SurvPM",
@@ -636,8 +638,14 @@ setMethod(
 setMethod(
     f="plot",
     signature="SurvPM",
-    definition=function(x,y,m=1,idx=1,...){
+    definition=function(x,y=1,m=1,...){
 
+        if(y!=1 & y!=2) {
+            print("Invalid option for y (type of chart). Must be 1 or 2.")
+            return("Error - not plotted")
+        }
+        
+        
         ##NA fit
         plotdta<-data.frame(T=x@crData$t, CC= as.integer(x@crData$d==m))
         
@@ -649,7 +657,7 @@ setMethod(
         
         myH2<-cumsum(myrt)
 
-        if(idx==1){
+        if(y==1){
             ##Cum Haz plot
             plot(x@crHt[,1], x@crHt[,1+m]*100, xlim=c(0,x@maxT), ylim=c(0, max(c( max(100*(myH2+1.96*mysig)), max(x@crHt[,2]*100)))),  type="l", xlab="Time (y)", ylab="Cumulative Hazard (%)", col=2, lty=2, main="", lwd=3)
                                                                            
@@ -664,7 +672,7 @@ setMethod(
             legend("topleft", c("Observed", "Expected"), col=c(1,2), lty=c(1,2), bty="n")
 
         }
-        if(idx==2){
+        if(y==2){
             ## martingale plot
 
             eventtime<-myNA2$time
@@ -716,3 +724,16 @@ setMethod(
 )
 
 
+##debug
+## demo data
+#mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)), grp1=c(rep(0,10), rep(1,11)), grp2=as.factor(rep(c(1,2,3), each=7)))
+
+#colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""), "x1", "x2")
+
+#myspm<-survpm(mysumdta, 2, 21)
+
+## x1 + x2 adds this formula to the bespoke Poisson regression for time-dependent follow-up
+#myspm<-survpm(mysumdta, 2, 21, TRUE, "x1 + x2")
+#summary(myspm)
+
+#plot(myspm, idx=2)

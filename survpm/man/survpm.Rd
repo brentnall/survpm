@@ -74,7 +74,7 @@ myspm<-survpm(mysumdta, 2, 21)
 myspm<-survpm(mysumdta, 2, 21, TRUE, "x1 + x2")
 summary(myspm)
 
-plot(myspm, idx=2)
+plot(myspm, 2)
 
 }
 % Add one or more standard keywords, see file 'KEYWORDS' in the

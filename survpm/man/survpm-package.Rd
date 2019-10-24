@@ -40,5 +40,5 @@ colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1
 ## create spm object
 myspm<-survpm(mysumdta, 2, 21)
 ## plot through time
-plot(myspm, idx=2)
+plot(myspm, 2)
 }
