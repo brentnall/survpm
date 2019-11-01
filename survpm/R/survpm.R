@@ -557,7 +557,21 @@ setMethod(
             myHinterval
             
         }
+
+        print("[debug] tdepcal 2")
         
+        
+
+        ## cumulative hazard should start at zero
+        thisH<-list()
+
+        for(idx in 1:object@m){
+
+            thisH[[idx]] <-  cbind( rep(0, object@n), object@crH[,(1 + (idx-1)*object@maxT) : ( (idx-1)*object@maxT + object@maxT)] )  
+
+        }        
+
+        ##initialise
         myzH<-matrix(0, nrow=nz, ncol=object@m)
         
         for(idx in 1:object@m){
@@ -566,14 +580,33 @@ setMethod(
                     
                 for(idz in 1:(lastrisk[idy]-1)){
                     
-                    myzH[idz ,idx] <- myzH[idz ,idx] + fn.intervalH(
-                       object@crH[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
+                    myzH[idz+1 ,idx] <- myzH[idz+1 ,idx] + fn.intervalH(
+                      thisH[[idx]][idy, ],
                        object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
                        idz
                     )
             }
             }   
         }
+
+        ##debug
+#        idz<-2
+#        idx<-1
+
+#        idy<-1
+#        myH<-thisH[[idx]][idy, ]
+#        myh<-object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)]     
+
+#        fn.intervalH(myH, myh, idz)
+
+#        temp<-0
+#        for(idy in 1:object@n){
+#            myH<-thisH[[idx]][idy, ]
+#            myh<-object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)]
+#            temp<-temp+fn.intervalH(myH, myh, idz)
+#        }
+        
+
         
         ##number at risk
 ##        atrisk <- numeric(nz)
@@ -592,7 +625,8 @@ setMethod(
 ##        for(idz in 1:(length(lastrisk)-1) ){
  ##           atrisk[ (lastrisk[idz]+1) : (lastrisk[idz+1]) ] <- atrisk[lastrisk[idz]] - 1
   ##      }
-
+        print("[debug] tdepcal 3")
+        
         for(idz in 1:( ntimes -1 )){
 ##            print(idz)
             atrisk[ (mytimes[idz]+1) : (mytimes[idz+1]) ] <- atrisk[ mytimes[idz] ] - changetimes[idz, 2]
@@ -695,11 +729,14 @@ setMethod(
     signature="SurvPM",
     definition=function(x,y=1,m=1,...){
 
+        if(missing(y)) y<-1
+
         if(y!=1 & y!=2) {
+            
             print("Invalid option for y (type of chart). Must be 1 or 2.")
+            
             return("Error - not plotted")
         }
-        
         
         ##NA fit
         plotdta<-data.frame(T=x@crData$t, CC= as.integer(x@crData$d==m))
@@ -713,8 +750,10 @@ setMethod(
         myH2<-cumsum(myrt)
 
         if(y==1){
-            ##Cum Haz plot : TODO NEED MEAN HAZARD NOT TOTAL
-            plot(x@crHt[,1], x@crHt[,1+m], xlim=c(0,x@maxT), ylim=c(0, max(c( max((myH2+1.96*mysig)), max(x@crHt[,2])))) ,  type="l", xlab="Time (y)", ylab="Cumulative Hazard", col=2, lty=2, main="", lwd=3)
+
+            plot.ylim<-c(0, max(c( max((myH2+1.96*mysig)), max(x@crHt[, 1+m]))))
+            
+            plot(x@crHt[,1], x@crHt[,1+m], xlim=c(0,x@maxT), ylim=plot.ylim,  type="l", xlab="Time (y)", ylab="Cumulative Hazard", col=2, lty=2, main="", lwd=3)
 
 ##            plot(x@crHt[,1], x@crHt[,1+m], xlim=c(0,x@maxT), ylim=c(0, max(c( max((myH2+1.96*mysig)), max(x@crHt[,2])))),  type="l", xlab="Time (y)", ylab="Cumulative Hazard (%)", col=2, lty=2, main="", lwd=3)
                                          
@@ -737,7 +776,7 @@ setMethod(
 
             myfillin<-sapply(eventtime, function(ind) which(x@crHt[,1]==ind) )
 
-            nz<-nrow(x@crHt)
+            nz<-nrow(x@crHt) 
             
             myobs.NA<-rep(0, nz)
 
@@ -761,12 +800,17 @@ setMethod(
             
             mymodH2<-c(0, x@crHt[,1+m])
 
-    
-            plot(x@crHt[,1], (myobs.NA/x@crHt[,1+m]), type="l", ylab="O/E (Cumulative Hazard)", xlab="Time (y)" ,   main="", ylim=c(min((myobs.NA-1.96*myobs.sig.NA)/x@crHt[,1+m]), max((myobs.NA+1.96*myobs.sig.NA)/x@crHt[,1+m])))
-            
-            abline(h=1, lty=2)
+            plotdta.mart<-cbind(x@crHt[,1], (myobs.NA/x@crHt[,1+m]))[2:length(myobs.NA),]
 
-            abline(h=0, lty=3, col=2)
+##            plotylim <- c(min((myobs.NA-1.96*myobs.sig.NA)[2:nz]/x@crHt[2:nz,1+m]), max((myobs.NA+1.96*myobs.sig.NA)[2:nz]/x@crHt[2:nz,1+m]))
+
+            plotylim<-c(-0.5,2)
+            
+            plot(plotdta.mart, type="l", ylab="O/E (Cumulative Hazard)", xlab="Time (y)" ,   main="", ylim=plotylim)
+            
+            abline(h=1, lty=2, col=2,lwd=3)
+
+            abline(h=0, lty=3, col="gray", lwd=3)
 
             grid()
             
@@ -851,32 +895,73 @@ fn.piecewise<-function(haz, maxT)
 ##OK
 
 
-##debug - fewer
-maxT <- 20
-haz1 <-  (1:20)/100
-haz2 <-  rep(2,20)/100
 
-myn<-100
 
-##Time 1
-myT1<-sapply(1:myn, function(ind) fn.piecewise(haz1, maxT))
+fn.sim<-function(haz1, haz2, nsim){
 
-##Time 2
-myT2<-sapply(1:myn, function(ind) fn.piecewise(haz2, maxT))
+    maxT<-length(haz1)
+    
+    ##Time 1
+    myT1<-sapply(1:nsim, function(ind) fn.piecewise(haz1, maxT))
 
-myT<-pmin(myT1, myT2)
+    ##Time 2
+    myT2<-sapply(1:nsim, function(ind) fn.piecewise(haz2, maxT))
 
-myD <- apply(cbind(maxT, myT1, myT2), 1, which.min)-1
+    myT<-pmin(myT1, myT2)
 
-myT<-pmin(myT, maxT-0.00001)
+    myD <- apply(cbind(maxT, myT1, myT2), 1, which.min)-1
 
-myhazmod<-t(matrix(rep(c(cumsum(haz1), cumsum(haz2)), myn), nrow=length(haz1) + length(haz2)) )
-mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
-colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
+    myT<-pmin(myT, maxT-0.00001)
 
-myspm<-survpm(mysumdta, m=2, 20)
+    myhazmod<-t(matrix(rep(c(cumsum(haz1), cumsum(haz2)), myn), nrow=length(haz1) + length(haz2)) )
+
+    mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
+
+    colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
+
+    myspm<-survpm(mysumdta, m=2, 20)
+
+    myspm
+}
 ##OK
 
+
+##debug - fewer
+#maxT <- 20
+#haz1 <-  (1:20)/100
+#haz2 <-  rep(2,20)/100
+
+#myn<-150
+
+#myspm<-fn.sim(haz1, haz2, myn)
+
+#par(mfrow=c(2,2))
+#plot(myspm); plot(myspm,2)
+#plot(myspm,1,2); plot(myspm,2,2)
+#summary(myspm)
+##plot(myspm@crHt[,1:2])
+
+#mysims<-sapply(1:5, function(idx) fn.sim(haz1, haz2, myn) )
+
+#lapply(mysims, summary)
+
+#myval<-sort(unlist(lapply(mysims, function(insim) insim@resOEtot[1,1] / insim@resOEtot[1,2] )))
+
+#plot(mysims[[1]]@crHt[,1:2])
+#plot(mysims[[1]]@crHt[,1:2], type="l")
+#sapply(2:5, function(idx) lines(mysims[[idx]]@crHt[,1:2], col=idx) )
+
+
+#pdf()
+#lapply(mysims, plot)
+##lapply(mysims, plot, m=2)#
+#dev.off()
+
+#boxplot(myval)
+#summary(myspm)
+#par(mfrow=c(1,2))
+#plot(myspm)
+#plot(myspm,1,2)
 
 
 ##plot(myspm)
