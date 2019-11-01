@@ -58,7 +58,7 @@ fn.formatCI<-function(ind, ndig=2, ci="95%CI"){
 
 ####
 ## * crData format needed:
-##     - id, time, cause, hazard (number discrete time units) cause 1, 2, ..., then covariates used in formula (if supplied)
+##     - id, time, cause, cumulative hazard (number discrete time units) cause 1, 2, ..., then covariates used in formula (if supplied)
 ##Time in same units as hazard. e.g. 1 y hazard, time in years
 ## inX - covariates, including grp for risk subgroups
 
@@ -136,6 +136,7 @@ setMethod(
         }
 
         ## Method to calculated overall expected number events, each cause based on cumulative hazard approach
+        ##print("[debug] calcH")
         allhaz<-calcH(.Object)
 
         ## Overal expected number of events assigned
@@ -145,12 +146,16 @@ setMethod(
         .Object@crhaz<-allhaz[[2]]
 
         ## Calculate overall calibration table based on exact Poisson etc
+        ##print("[debug] calcOE")
         .Object@resOEtot<-calcOE(.Object)
 
         ## Calculate time dependent expected cumulative hazard for each cause (i.e. through followup time, at each event or when model hazard may change (discrete time interval).
+        ##TODO: this takes a long time when n large (even 1000)
+        print("[debug] tdepcal")
         .Object@crHt <-tdepcal(.Object)
         
         if(ctime==TRUE){
+            print("[debug] calcOEt")
             .Object@resOEtime <- calcOEt(.Object)
         }
         ## Initialise
@@ -410,6 +415,7 @@ setMethod(
 
 ## Class method definition. Not intended for users (internal)
 ## Defines function that can calc cumulative hazards for cause-specific model projections over follow-up time (each event or when hazard function changes)
+## needed??????????
 setGeneric(
     name="calcHt",
     def=function(object){standardGeneric("calcHt")}
@@ -465,21 +471,51 @@ setMethod(
     }
 
     ##number at risk
-    atrisk <- numeric(nz)
-    
-    atrisk[1:lastrisk[1]] <- object@n
-    
-    for(idz in 1:(length(lastrisk)-1) ){
-        atrisk[ (lastrisk[idz]+1) : (lastrisk[idz+1]) ] <- atrisk[lastrisk[idz]] - 1
-    }
-
-    atrisk[atrisk==0]<-1 # avoid NaN
+##    atrisk <- numeric(nz)
+ ##   
+  ##  atrisk[1:lastrisk[1]] <- object@n
+  ##  
+   ## for(idz in 1:(length(lastrisk)-1) ){
+  ##      atrisk[ (lastrisk[idz]+1) : (lastrisk[idz+1]) ] <- atrisk[lastrisk[idz]] - 1
+  ##  }
+##
+ ##   atrisk[atrisk==0]<-1 # avoid NaN
 
     ## cumulative at risk hazard (eqn 22)
     myzHcuml <- apply(myzH,2, function(ind) cumsum(ind/atrisk))
     
     return(cbind(myz, myzHcuml))
 
+      ##number at risk
+##        atrisk <- numeric(nz)
+        atrisk <- rep(object@n, nz)
+
+        ## need to consider order of last risks
+        ##ties
+        mytimes <- sort(unique(lastrisk))
+
+        ntimes <- length(mytimes)
+        
+        changetimes<-cbind(mytimes, hist(lastrisk, c(0,mytimes), plot=FALSE)$count)
+        
+        for(idz in 1:( ntimes -1 )){
+##            print(idz)
+            atrisk[ (mytimes[idz]+1) : (mytimes[idz+1]) ] <- atrisk[ mytimes[idz] ] - changetimes[idz, 2]
+        }
+
+        ## last time point
+        atrisk[( mytimes[ntimes] + 1):nz]  <- atrisk[ mytimes[ntimes] ] - changetimes[ntimes, 2] 
+        
+        atrisk[atrisk==0]<-1 # avoid NaN
+        
+        ## cumulative at risk hazard (eqn 22)
+        myzHcuml <- apply(myzH,2, function(ind) cumsum(ind/atrisk))
+        
+        return(cbind(myz, myzHcuml))
+  
+
+
+        
     }
 )
 
@@ -531,22 +567,40 @@ setMethod(
                 for(idz in 1:(lastrisk[idy]-1)){
                     
                     myzH[idz ,idx] <- myzH[idz ,idx] + fn.intervalH(
-                    object@crH[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-                    object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-                    idz
+                       object@crH[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
+                       object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
+                       idz
                     )
             }
             }   
         }
         
         ##number at risk
-        atrisk <- numeric(nz)
+##        atrisk <- numeric(nz)
+        atrisk <- rep(object@n, nz)
+
+        ## need to consider order of last risks
+##        orderrisk <- sort(lastrisk)
+
+        ##ties
+        mytimes <- sort(unique(lastrisk))
+
+        ntimes <- length(mytimes)
         
-        atrisk[1:lastrisk[1]] <- object@n
+        changetimes<-cbind(mytimes, hist(lastrisk, c(0,mytimes), plot=FALSE)$count)
         
-        for(idz in 1:(length(lastrisk)-1) ){
-            atrisk[ (lastrisk[idz]+1) : (lastrisk[idz+1]) ] <- atrisk[lastrisk[idz]] - 1
+##        for(idz in 1:(length(lastrisk)-1) ){
+ ##           atrisk[ (lastrisk[idz]+1) : (lastrisk[idz+1]) ] <- atrisk[lastrisk[idz]] - 1
+  ##      }
+
+        for(idz in 1:( ntimes -1 )){
+##            print(idz)
+            atrisk[ (mytimes[idz]+1) : (mytimes[idz+1]) ] <- atrisk[ mytimes[idz] ] - changetimes[idz, 2]
         }
+
+        ##        if(nz > mytimes[ntimes]){
+        ## last time point
+        atrisk[( mytimes[ntimes] + 1):nz]  <- atrisk[ mytimes[ntimes] ] - changetimes[ntimes, 2] 
         
         atrisk[atrisk==0]<-1 # avoid NaN
         
@@ -634,6 +688,7 @@ setMethod(
 
 )
 
+
 ## Plot method implementation (for users)
 setMethod(
     f="plot",
@@ -658,16 +713,19 @@ setMethod(
         myH2<-cumsum(myrt)
 
         if(y==1){
-            ##Cum Haz plot
-            plot(x@crHt[,1], x@crHt[,1+m]*100, xlim=c(0,x@maxT), ylim=c(0, max(c( max(100*(myH2+1.96*mysig)), max(x@crHt[,2]*100)))),  type="l", xlab="Time (y)", ylab="Cumulative Hazard (%)", col=2, lty=2, main="", lwd=3)
-                                                                           
+            ##Cum Haz plot : TODO NEED MEAN HAZARD NOT TOTAL
+            plot(x@crHt[,1], x@crHt[,1+m], xlim=c(0,x@maxT), ylim=c(0, max(c( max((myH2+1.96*mysig)), max(x@crHt[,2])))) ,  type="l", xlab="Time (y)", ylab="Cumulative Hazard", col=2, lty=2, main="", lwd=3)
+
+##            plot(x@crHt[,1], x@crHt[,1+m], xlim=c(0,x@maxT), ylim=c(0, max(c( max((myH2+1.96*mysig)), max(x@crHt[,2])))),  type="l", xlab="Time (y)", ylab="Cumulative Hazard (%)", col=2, lty=2, main="", lwd=3)
+                                         
+            
             grid()
 
-            lines(myNA2$time, myH2*100, col=1, lwd=2)
+            lines(myNA2$time, myH2, col=1, lwd=2)
 
-            lines(myNA2$time, 100*(myH2+1.96*mysig), col=1, lty=3)
+            lines(myNA2$time, (myH2+1.96*mysig), col=1, lty=3)
 
-            lines(myNA2$time, 100*(myH2-1.96*mysig), col=1, lty=3)
+            lines(myNA2$time, (myH2-1.96*mysig), col=1, lty=3)
 
             legend("topleft", c("Observed", "Expected"), col=c(1,2), lty=c(1,2), bty="n")
 
@@ -723,10 +781,117 @@ setMethod(
     }
 )
 
+## simulations
+
+## piecewise constant hazard, simulate time to event
+##INPUT
+## maxT - number of discrete time periods
+## haz - piecewise constant hazard
+
+
+## simulate piecewise constant survival time
+## returns maxT + 1 if no event yet
+fn.piecewise<-function(haz, maxT)
+    {
+        for(idx in 1:maxT){
+            thisT<-rexp(1, haz[idx])
+            if(thisT<1){
+                return((idx-1) + thisT)
+            }
+        }
+        return(maxT)
+    }
+
+
+##debug
+#maxT <- 20
+#haz1 <-  (1:20)/100
+#haz2 <-  rep(2,20)/100
+
+#myn<-1000
+
+##Time 1
+#myT1<-sapply(1:myn, function(ind) fn.piecewise(haz1, maxT))
+
+##Time 2
+#myT2<-sapply(1:myn, function(ind) fn.piecewise(haz2, maxT))
+
+#myT<-pmin(myT1, myT2)
+
+#myD <- apply(cbind(maxT, myT1, myT2), 1, which.min)-1
+
+#myT<-pmin(myT, maxT-0.00001)
+##mysumdta<-data.frame(myid=seq(1,myn), myt = myT, mycause = myD)
+
+##(df, m, maxT, ctime=FALSE, adjform = ""){
+#myspm<-survpm(mysumdta, m=2, 20)
+## Error in `[.data.frame`(crData, , 4:(3 + maxT * m)) : 
+##  undefined columns selected
+## TODO: ADD CHECKS THAT DATA FRAME MAKES SENSE
+
+##need to add model
+##myhazmod<-t(matrix(rep(c(haz1, haz2), myn), nrow=length(haz1) + length(haz2)) )
+
+##mysumdta<-data.frame(myid=seq(1,myn), myt = myT, mycause = myD, mymod=myhazmod)
+
+#myspm<-survpm(mysumdta, m=2, 20)
+##Error in floor(object@crData$t) (from survpm.R!34027lp#195) : 
+##  non-numeric argument to mathematical function
+##mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
+##colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
+##myspm<-survpm(mysumdta, m=2, 20)
+
+##TODO: need to add check that cumulative hazard is increasing with time (so not hazard passed)
+
+##need to add model - CUMULATIVE HAZARD
+#myhazmod<-t(matrix(rep(c(cumsum(haz1), cumsum(haz2)), myn), nrow=length(haz1) + length(haz2)) )
+#mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
+#colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
+#myspm<-survpm(mysumdta, m=2, 20)
+##OK
+
+
+##debug - fewer
+maxT <- 20
+haz1 <-  (1:20)/100
+haz2 <-  rep(2,20)/100
+
+myn<-100
+
+##Time 1
+myT1<-sapply(1:myn, function(ind) fn.piecewise(haz1, maxT))
+
+##Time 2
+myT2<-sapply(1:myn, function(ind) fn.piecewise(haz2, maxT))
+
+myT<-pmin(myT1, myT2)
+
+myD <- apply(cbind(maxT, myT1, myT2), 1, which.min)-1
+
+myT<-pmin(myT, maxT-0.00001)
+
+myhazmod<-t(matrix(rep(c(cumsum(haz1), cumsum(haz2)), myn), nrow=length(haz1) + length(haz2)) )
+mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
+colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
+
+myspm<-survpm(mysumdta, m=2, 20)
+##OK
+
+
+
+##plot(myspm)
+##Error in .local(x, y, ...) (from survpm.R!34027lp#643) : argument "y" is missing, with no default
+#> plot(myspm,2)
+#> plot(myspm,2)
+# scale x-axis (and y) not v good
+
+##only need to keep going until maxT
+
+
 
 ##debug
 ## demo data
-#mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)), grp1=c(rep(0,10), rep(1,11)), grp2=as.factor(rep(c(1,2,3), each=7)))
+##mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)), grp1=c(rep(0,10), rep(1,11)), grp2=as.factor(rep(c(1,2,3), each=7)))
 
 #colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""), "x1", "x2")
 
