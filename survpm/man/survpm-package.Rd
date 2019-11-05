@@ -7,6 +7,7 @@
 \alias{fn.format}
 \alias{fn.formatCI}
 \alias{fn.formatp}
+\alias{fn.spmsim}
 \alias{checkSurvPM}
 \docType{package}
 \title{
@@ -34,11 +35,18 @@ Literature or other references for background information
 %~~ \code{\link[<pkg>:<pkg>-package]{<pkg>}} ~~
 %}
 \examples{
-## demo data
-mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)))
-colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""))
-## create spm object
-myspm<-survpm(mysumdta, 2, 21)
-## plot through time
-plot(myspm, 2)
+maxT <- 20
+haz1 <-  (1:20)/100
+haz2 <-  rep(2,20)/100
+myn<-200
+
+mysumdta <- fn.spmsim(haz1, haz2, myn)
+myspm<-survpm(mysumdta, m=2, maxT, ctime=TRUE)
+
+par(mfrow=c(2,2))
+plot(myspm); plot(myspm,2)
+plot(myspm,1,2); plot(myspm,2,2)
+summary(myspm)
+
 }
+

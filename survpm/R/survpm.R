@@ -49,6 +49,48 @@ fn.formatCI<-function(ind, ndig=2, ci="95%CI"){
 
 }
 
+########################################
+## simulate data for spm model
+## haz1, haz2 = assumed piecewise constant hazards (Used to simulate data)
+## nsim = sample size
+fn.spmsim<-function(haz1, haz2, nsim){
+
+    ## simulate piecewise constant survival time
+    ## returns maxT + 1 if no event yet
+    fn.piecewise<-function(haz, maxT)
+    {
+        for(idx in 1:maxT){
+            thisT<-rexp(1, haz[idx])
+            if(thisT<1){
+                return((idx-1) + thisT)
+            }
+        }
+        return(maxT)
+    }
+    
+
+    maxT<-length(haz1)
+    
+    ##Time 1
+    myT1<-sapply(1:nsim, function(ind) fn.piecewise(haz1, maxT))
+
+    ##Time 2
+    myT2<-sapply(1:nsim, function(ind) fn.piecewise(haz2, maxT))
+
+    myT<-pmin(myT1, myT2)
+
+    myD <- apply(cbind(maxT, myT1, myT2), 1, which.min)-1
+
+    myT<-pmin(myT, maxT-0.00001)
+
+    myhazmod<-t(matrix(rep(c(cumsum(haz1), cumsum(haz2)), nsim), nrow=length(haz1) + length(haz2)) )
+
+    mysumdta<-data.frame(myid=seq(1, nsim), t = myT, mycause = myD, mymod=myhazmod)
+
+    colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
+
+    mysumdta
+}
 
 
 
@@ -66,7 +108,7 @@ fn.formatCI<-function(ind, ndig=2, ci="95%CI"){
 checkSurvPM <- function(object) {
 
     errors <- character()
-
+    
     if (length(errors) == 0) TRUE else errors
 }
 
@@ -100,15 +142,57 @@ setMethod(
     signature="SurvPM",
     definition=function(.Object, crData, m, maxT, ctime, adjform){
 
+        ##check passed the correct arguments
+
+        ##1. crData shoud have id, survival time, cause, then cumulative hzarad for each competing risk cause
+        if(ncol(crData) < 3 + maxT*m){
+
+            myerror <- paste("Input error: crData should have at least", 3+maxT*m, "columns, crData supplied only has", ncol(crData), "columns. Need to follow format with columns for id, survival time, cause, then cumulative hazards for each cause (m=)", m, "supplied),  up to maxT (", maxT, "supplied)." )
+
+            stop(myerror)
+
+        }
+
+        if(sum( colnames(crData)[1:3] == c("id", "t", "d") )< 3){
+
+            mywarning<- paste("Need data frame for crData with the first three columns identifier (use colname id), time (t) and event type (d). You passed", colnames(crData)[1], ",", colnames(crData)[2], ",", colnames(crData)[3],".")
+
+            stop(mywarning)
+
+        }
+
+       
         ## id, survival time and cause
         .Object@crData <- crData[,1:3] 
 
         ## expected cumulative hazard for each competing risk model
         .Object@crH <- as.matrix(crData[,4:(3+maxT*m)])
-
+       
         ## number of competing risks (e.g. m=1 is survival analysis)
         .Object@m<-as.integer(m)
 
+        ##### error check
+        errors <- character()
+
+        errorcount <- 0
+
+        for(idx in 1 : m){
+            
+            thischeck <- apply( .Object@crH[,seq( (idx - 1)*maxT + 1, (idx - 1)*maxT + maxT)], 1, diff)<0
+            
+            if(sum(thischeck)>0){
+                
+            errorcount <- errorcount + 1
+                
+                errors[errorcount] <- paste("Cumulative hazard should INCREASE! Please check cause m=", idx, "\n")
+            }
+        }
+
+        if (length(errors) > 0) stop(errors)
+
+######
+
+        
         ## number of individuals
         .Object@n = as.integer(nrow(crData))
 
@@ -342,25 +426,26 @@ setMethod(
         ## competing risk cause last time period
         mydtafit$J[myposlast] <- object@crData$d
 
+        ## data for fitting calibration slope (only)
+        mydtafit2 <- data.frame(J=object@crData$d, t=object@crData$t, H= object@pmH )
+        
         ##formulas for calibration check models
-        myformula<-vector("list", 5)
+        myformula<-vector("list", 4)
 
         ##1. calibration in the large
         myformula[[1]]<- as.formula("(mydtafit$J==idx) ~ offset(log (mydtafit[,2+idx]) )")
 
         ##2. calibration slope
-        myformula[[2]] <- as.formula("(mydtafit$J==idx) ~ log (mydtafit[,2+idx])")
+##        myformula[[2]] <- as.formula("(mydtafit$J==idx) ~ log (mydtafit[,2+idx])")
+        myformula[[2]] <- as.formula("(mydtafit2$J==idx) ~ log (mydtafit2[,2+idx])")
 
         ##3. overall calibration plus time
-        myformula[[3]]<- as.formula( "(mydtafit$J==idx) ~ mydtafit$t + offset(log(mydtafit[,2+idx]))" )
+        myformula[[3]]<- as.formula( "(mydtafit$J==idx) ~  mydtafit$t + offset(log(mydtafit[,2+idx]))" )
 
-        ##4. calibration slope plus time
-        myformula[[4]]<- as.formula( "(mydtafit$J==idx) ~ mydtafit$t + log (mydtafit[,2+idx])" )
-
-        ##5. subgroups / user adjustments plus time, if user supplied formula
+        ##4. subgroups / user adjustments plus time, if user supplied formula
         if(object@adjform!=""){
             
-            myformula[[5]] <- as.formula( paste( c("(mydtafit$J==idx) ~ t +", object@adjform, "+ offset(log(mydtafit[,2+idx]))") ))
+            myformula[[4]] <- as.formula( paste( c("(mydtafit$J==idx) ~ -1 + t +", object@adjform, "+ offset(log(mydtafit[,2+idx]))") ))
             
         }
         
@@ -390,7 +475,7 @@ setMethod(
             ## initialise
             myglm[[idx]]<- vector("list", 5)
             
-            for(idy in 1 : 4){
+            for(idy in c(1,3)){
 
                 thisglm<-  glm( myformula[[idy]] , mydtafit, family=poisson)
 
@@ -398,10 +483,16 @@ setMethod(
 
             }
 
+            idy<-2
+            
+            thisglm<-  glm( myformula[[idy]] , mydtafit2, family=poisson)
+
+            myglm[[idx]][[idy]] <- fn.formatglm( thisglm )
+                        
             ##IF adjmodel provided
             if(object@adjform != ""){
 
-                myglm[[idx]][[5]] <- fn.formatglm( glm( myformula[[5]], mydtafit, family=poisson) )
+                myglm[[idx]][[4]] <- fn.formatglm( glm( myformula[[5]], mydtafit, family=poisson) )
 
             }
 
@@ -470,24 +561,12 @@ setMethod(
         }   
     }
 
-    ##number at risk
-##    atrisk <- numeric(nz)
- ##   
-  ##  atrisk[1:lastrisk[1]] <- object@n
-  ##  
-   ## for(idz in 1:(length(lastrisk)-1) ){
-  ##      atrisk[ (lastrisk[idz]+1) : (lastrisk[idz+1]) ] <- atrisk[lastrisk[idz]] - 1
-  ##  }
-##
- ##   atrisk[atrisk==0]<-1 # avoid NaN
-
     ## cumulative at risk hazard (eqn 22)
     myzHcuml <- apply(myzH,2, function(ind) cumsum(ind/atrisk))
     
     return(cbind(myz, myzHcuml))
 
       ##number at risk
-##        atrisk <- numeric(nz)
         atrisk <- rep(object@n, nz)
 
         ## need to consider order of last risks
@@ -499,7 +578,7 @@ setMethod(
         changetimes<-cbind(mytimes, hist(lastrisk, c(0,mytimes), plot=FALSE)$count)
         
         for(idz in 1:( ntimes -1 )){
-##            print(idz)
+
             atrisk[ (mytimes[idz]+1) : (mytimes[idz+1]) ] <- atrisk[ mytimes[idz] ] - changetimes[idz, 2]
         }
 
@@ -573,7 +652,9 @@ setMethod(
 
         ##initialise
         myzH<-matrix(0, nrow=nz, ncol=object@m)
-        
+
+        ## this is rate limiting step - want to speed up
+        ## todo: some people may have exactly same predicted hazard - could use this to speed up (do unique thisH and count number at risk each period)
         for(idx in 1:object@m){
 
             for(idy in 1:object@n){
@@ -589,32 +670,11 @@ setMethod(
             }   
         }
 
-        ##debug
-#        idz<-2
-#        idx<-1
-
-#        idy<-1
-#        myH<-thisH[[idx]][idy, ]
-#        myh<-object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)]     
-
-#        fn.intervalH(myH, myh, idz)
-
-#        temp<-0
-#        for(idy in 1:object@n){
-#            myH<-thisH[[idx]][idy, ]
-#            myh<-object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)]
-#            temp<-temp+fn.intervalH(myH, myh, idz)
-#        }
-        
-
         
         ##number at risk
-##        atrisk <- numeric(nz)
         atrisk <- rep(object@n, nz)
 
         ## need to consider order of last risks
-##        orderrisk <- sort(lastrisk)
-
         ##ties
         mytimes <- sort(unique(lastrisk))
 
@@ -622,9 +682,6 @@ setMethod(
         
         changetimes<-cbind(mytimes, hist(lastrisk, c(0,mytimes), plot=FALSE)$count)
         
-##        for(idz in 1:(length(lastrisk)-1) ){
- ##           atrisk[ (lastrisk[idz]+1) : (lastrisk[idz+1]) ] <- atrisk[lastrisk[idz]] - 1
-  ##      }
         print("[debug] tdepcal 3")
         
         for(idz in 1:( ntimes -1 )){
@@ -632,7 +689,6 @@ setMethod(
             atrisk[ (mytimes[idz]+1) : (mytimes[idz+1]) ] <- atrisk[ mytimes[idz] ] - changetimes[idz, 2]
         }
 
-        ##        if(nz > mytimes[ntimes]){
         ## last time point
         atrisk[( mytimes[ntimes] + 1):nz]  <- atrisk[ mytimes[ntimes] ] - changetimes[ntimes, 2] 
         
@@ -684,32 +740,23 @@ setMethod(
             for(idx in 1 : object@m){
                 print(paste(c("---->> Cause", idx) ))
                 
-                print("**Calibration, overall, Poisson regression model**")
+                print("**Calibration in the large, O/E (95%CI), Poisson regression model**")
                 thisout<-fn.formatCIm( object@resOEtime[[idx]][[1]] )
                 print(thisout)
 
-                print("**Calibration, slope, Poisson regression model**")
+                ##Note this is not sensible if constant hazard..
+                print("**Calibration slope , O/E (95%CI)**")
                 thisout<-fn.formatCIm( object@resOEtime[[idx]][[2]] )
-                thisoutm<-data.frame(c("Overall", "Slope"), thisout)
-                colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
-                print(thisoutm)
+                print(thisout[2])
 
-                print("**Calibration, overall + time, Poisson regression model**")
+                print("**Calibration through time, trend test O/E (95%CI)**")
                 thisout<-fn.formatCIm( object@resOEtime[[idx]][[3]] )
-                thisoutm<-data.frame(c("Overall", "Follow-up"), thisout)
-                colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
-                print(thisoutm)
-
-                print("**Calibration, overall + time, Poisson regression model**")
-                thisout<-fn.formatCIm( object@resOEtime[[idx]][[4]] )
-                thisoutm<-data.frame(c("Overall", "Follow-up", "Slope"), thisout)
-                colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
-                print(thisoutm)
+                print(thisout[2])
 
                 if(object@adjform != ""){
                     print("**Calibration, bespoke, Poisson regression model**")
-                    thisout<-fn.formatCIm( object@resOEtime[[idx]][[5]] )
-                    thisrownames<-rownames(object@resOEtime[[idx]][[5]])
+                    thisout<-fn.formatCIm( object@resOEtime[[idx]][[4]] )
+                    thisrownames<-rownames(object@resOEtime[[idx]][[4]])
                     thisoutm<-data.frame(c("Overall", "Follow-up", thisrownames[3:length(thisrownames)]), thisout)
                     colnames(thisoutm)<-c("Parameter", "Coefficient (95CI)")
                     print(thisoutm)
@@ -754,9 +801,6 @@ setMethod(
             plot.ylim<-c(0, max(c( max((myH2+1.96*mysig)), max(x@crHt[, 1+m]))))
             
             plot(x@crHt[,1], x@crHt[,1+m], xlim=c(0,x@maxT), ylim=plot.ylim,  type="l", xlab="Time (y)", ylab="Cumulative Hazard", col=2, lty=2, main="", lwd=3)
-
-##            plot(x@crHt[,1], x@crHt[,1+m], xlim=c(0,x@maxT), ylim=c(0, max(c( max((myH2+1.96*mysig)), max(x@crHt[,2])))),  type="l", xlab="Time (y)", ylab="Cumulative Hazard (%)", col=2, lty=2, main="", lwd=3)
-                                         
             
             grid()
 
@@ -802,8 +846,6 @@ setMethod(
 
             plotdta.mart<-cbind(x@crHt[,1], (myobs.NA/x@crHt[,1+m]))[2:length(myobs.NA),]
 
-##            plotylim <- c(min((myobs.NA-1.96*myobs.sig.NA)[2:nz]/x@crHt[2:nz,1+m]), max((myobs.NA+1.96*myobs.sig.NA)[2:nz]/x@crHt[2:nz,1+m]))
-
             plotylim<-c(-0.5,2)
             
             plot(plotdta.mart, type="l", ylab="O/E (Cumulative Hazard)", xlab="Time (y)" ,   main="", ylim=plotylim)
@@ -825,165 +867,18 @@ setMethod(
     }
 )
 
-## simulations
-
-## piecewise constant hazard, simulate time to event
-##INPUT
-## maxT - number of discrete time periods
-## haz - piecewise constant hazard
 
 
-## simulate piecewise constant survival time
-## returns maxT + 1 if no event yet
-fn.piecewise<-function(haz, maxT)
-    {
-        for(idx in 1:maxT){
-            thisT<-rexp(1, haz[idx])
-            if(thisT<1){
-                return((idx-1) + thisT)
-            }
-        }
-        return(maxT)
-    }
-
-
-##debug
+##Simulate data 
 #maxT <- 20
 #haz1 <-  (1:20)/100
 #haz2 <-  rep(2,20)/100
+#myn<-200
 
-#myn<-1000
-
-##Time 1
-#myT1<-sapply(1:myn, function(ind) fn.piecewise(haz1, maxT))
-
-##Time 2
-#myT2<-sapply(1:myn, function(ind) fn.piecewise(haz2, maxT))
-
-#myT<-pmin(myT1, myT2)
-
-#myD <- apply(cbind(maxT, myT1, myT2), 1, which.min)-1
-
-#myT<-pmin(myT, maxT-0.00001)
-##mysumdta<-data.frame(myid=seq(1,myn), myt = myT, mycause = myD)
-
-##(df, m, maxT, ctime=FALSE, adjform = ""){
-#myspm<-survpm(mysumdta, m=2, 20)
-## Error in `[.data.frame`(crData, , 4:(3 + maxT * m)) : 
-##  undefined columns selected
-## TODO: ADD CHECKS THAT DATA FRAME MAKES SENSE
-
-##need to add model
-##myhazmod<-t(matrix(rep(c(haz1, haz2), myn), nrow=length(haz1) + length(haz2)) )
-
-##mysumdta<-data.frame(myid=seq(1,myn), myt = myT, mycause = myD, mymod=myhazmod)
-
-#myspm<-survpm(mysumdta, m=2, 20)
-##Error in floor(object@crData$t) (from survpm.R!34027lp#195) : 
-##  non-numeric argument to mathematical function
-##mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
-##colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
-##myspm<-survpm(mysumdta, m=2, 20)
-
-##TODO: need to add check that cumulative hazard is increasing with time (so not hazard passed)
-
-##need to add model - CUMULATIVE HAZARD
-#myhazmod<-t(matrix(rep(c(cumsum(haz1), cumsum(haz2)), myn), nrow=length(haz1) + length(haz2)) )
-#mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
-#colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
-#myspm<-survpm(mysumdta, m=2, 20)
-##OK
-
-
-
-
-fn.sim<-function(haz1, haz2, nsim){
-
-    maxT<-length(haz1)
-    
-    ##Time 1
-    myT1<-sapply(1:nsim, function(ind) fn.piecewise(haz1, maxT))
-
-    ##Time 2
-    myT2<-sapply(1:nsim, function(ind) fn.piecewise(haz2, maxT))
-
-    myT<-pmin(myT1, myT2)
-
-    myD <- apply(cbind(maxT, myT1, myT2), 1, which.min)-1
-
-    myT<-pmin(myT, maxT-0.00001)
-
-    myhazmod<-t(matrix(rep(c(cumsum(haz1), cumsum(haz2)), myn), nrow=length(haz1) + length(haz2)) )
-
-    mysumdta<-data.frame(myid=seq(1,myn), t = myT, mycause = myD, mymod=myhazmod)
-
-    colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:20, sep=""), paste("H2-", 1:20, sep=""))
-
-    myspm<-survpm(mysumdta, m=2, 20)
-
-    myspm
-}
-##OK
-
-
-##debug - fewer
-#maxT <- 20
-#haz1 <-  (1:20)/100
-#haz2 <-  rep(2,20)/100
-
-#myn<-150
-
-#myspm<-fn.sim(haz1, haz2, myn)
+#mysumdta <- fn.spmsim(haz1, haz2, myn)
+#myspm<-survpm(mysumdta, m=2, maxT, ctime=TRUE)
 
 #par(mfrow=c(2,2))
 #plot(myspm); plot(myspm,2)
 #plot(myspm,1,2); plot(myspm,2,2)
 #summary(myspm)
-##plot(myspm@crHt[,1:2])
-
-#mysims<-sapply(1:5, function(idx) fn.sim(haz1, haz2, myn) )
-
-#lapply(mysims, summary)
-
-#myval<-sort(unlist(lapply(mysims, function(insim) insim@resOEtot[1,1] / insim@resOEtot[1,2] )))
-
-#plot(mysims[[1]]@crHt[,1:2])
-#plot(mysims[[1]]@crHt[,1:2], type="l")
-#sapply(2:5, function(idx) lines(mysims[[idx]]@crHt[,1:2], col=idx) )
-
-
-#pdf()
-#lapply(mysims, plot)
-##lapply(mysims, plot, m=2)#
-#dev.off()
-
-#boxplot(myval)
-#summary(myspm)
-#par(mfrow=c(1,2))
-#plot(myspm)
-#plot(myspm,1,2)
-
-
-##plot(myspm)
-##Error in .local(x, y, ...) (from survpm.R!34027lp#643) : argument "y" is missing, with no default
-#> plot(myspm,2)
-#> plot(myspm,2)
-# scale x-axis (and y) not v good
-
-##only need to keep going until maxT
-
-
-
-##debug
-## demo data
-##mysumdta<-data.frame(myid=seq(1,21), myt=seq(0,20)+0.3, mycause=rep(c(0,1,2), 7), cbind(matrix(rep(seq(1,21)*0.03,each=21),ncol=21), matrix(rep(seq(1,11, by=0.5)*0.05,each=21),ncol=21)), grp1=c(rep(0,10), rep(1,11)), grp2=as.factor(rep(c(1,2,3), each=7)))
-
-#colnames(mysumdta)<-c("id", "t", "d", paste("H1-", 1:21, sep=""), paste("H2-", 1:21, sep=""), "x1", "x2")
-
-#myspm<-survpm(mysumdta, 2, 21)
-
-## x1 + x2 adds this formula to the bespoke Poisson regression for time-dependent follow-up
-#myspm<-survpm(mysumdta, 2, 21, TRUE, "x1 + x2")
-#summary(myspm)
-
-#plot(myspm, idx=2)

@@ -2,8 +2,7 @@ importFrom("survival", Surv)
 importFrom("survival",survfit)
 importFrom("graphics", "abline", "grid", "hist", "legend", "lines")
 importFrom("methods", "new")
-importFrom("stats", "poisson.test")
-importFrom("stats", "as.formula", "coef", "confint.default", "glm", "poisson", "poisson.test")
+importFrom("stats", "as.formula", "coef", "confint.default", "glm", "poisson", "poisson.test", "rexp")
 exportPattern("^[[:alpha:]]+")
 exportMethods(
     "plot",
