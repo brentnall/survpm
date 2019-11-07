@@ -1,4 +1,4 @@
-##################################################
+ ##################################################
 ## LIBRARIES needed 
 ##################################################
 library("survival")
@@ -504,99 +504,6 @@ setMethod(
 )
 
 
-## Class method definition. Not intended for users (internal)
-## Defines function that can calc cumulative hazards for cause-specific model projections over follow-up time (each event or when hazard function changes)
-## needed??????????
-setGeneric(
-    name="calcHt",
-    def=function(object){standardGeneric("calcHt")}
-    )
-## details
-setMethod(
-    f="calcHt",
-    signature="SurvPM",
-    definition=function(object){
-        
-    ## unique times when event or hazard changes in model
-    myz<-sort(unique(c(object@crData$t, 1:object@maxT))) ##add when hazard changes each time unit
-
-    myzidx<-    floor(myz)
-
-    myzrem<-    myz-floor(myz)
-
-    ##add t=0
-    myz<-c(0,myz); myzidx<-c(0,myzidx); myzrem<-c(0,myzrem)
-
-    nz<-length(myz)
-
-    lastrisk<-sapply(object@crData$t, function(idx) which(myz==idx))
-
-    ## hazard from time point idz to idz+1
-    fn.intervalH<-function(myH, myh, idz){
-        
-        myHstart<- myH[ myzidx[idz]+1 ] + myzrem[idz] * myh[myzidx[idz]+1]
-
-        myHend<- myH[ myzidx[idz+1]+1 ] + myzrem[idz+1] * myh[myzidx[idz+1]+1]
-
-        myHinterval<-myHend-myHstart
-
-        myHinterval
-    
-    }
-
-    myzH<-matrix(0, nrow=nz, ncol=object@m)
-
-    for(idx in 1:object@m){
-
-        for(idy in 1:object@n){
-
-            for(idz in 1:(lastrisk[idy]-1)){
-
-                myzH[idz ,idx] <- myzH[idz ,idx] + fn.intervalH(
-                    object@crH[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-                    object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-                    idz
-                    )
-            }
-        }   
-    }
-
-    ## cumulative at risk hazard (eqn 22)
-    myzHcuml <- apply(myzH,2, function(ind) cumsum(ind/atrisk))
-    
-    return(cbind(myz, myzHcuml))
-
-      ##number at risk
-        atrisk <- rep(object@n, nz)
-
-        ## need to consider order of last risks
-        ##ties
-        mytimes <- sort(unique(lastrisk))
-
-        ntimes <- length(mytimes)
-        
-        changetimes<-cbind(mytimes, hist(lastrisk, c(0,mytimes), plot=FALSE)$count)
-        
-        for(idz in 1:( ntimes -1 )){
-
-            atrisk[ (mytimes[idz]+1) : (mytimes[idz+1]) ] <- atrisk[ mytimes[idz] ] - changetimes[idz, 2]
-        }
-
-        ## last time point
-        atrisk[( mytimes[ntimes] + 1):nz]  <- atrisk[ mytimes[ntimes] ] - changetimes[ntimes, 2] 
-        
-        atrisk[atrisk==0]<-1 # avoid NaN
-        
-        ## cumulative at risk hazard (eqn 22)
-        myzHcuml <- apply(myzH,2, function(ind) cumsum(ind/atrisk))
-        
-        return(cbind(myz, myzHcuml))
-  
-
-
-        
-    }
-)
 
 ## Class method definition. Not intended for users (internal)
 ## Will define a function to calculations that enable a time-dependent calibration analysis
@@ -657,16 +564,24 @@ setMethod(
         ## todo: some people may have exactly same predicted hazard - could use this to speed up (do unique thisH and count number at risk each period)
         for(idx in 1:object@m){
 
+            thisconst <- 1 + (idx-1) * object@maxT
+
+            thisconst2 <- thisconst + object@maxT - 1
+
+            thisseq<- thisconst : thisconst2
+            
             for(idy in 1:object@n){
                     
                 for(idz in 1:(lastrisk[idy]-1)){
                     
-                    myzH[idz+1 ,idx] <- myzH[idz+1 ,idx] + fn.intervalH(
-                      thisH[[idx]][idy, ],
-                       object@crhaz[idy, (1 + (idx-1)*object@maxT) : ((idx-1)*object@maxT + object@maxT)],
-                       idz
-                    )
-            }
+                    myzH[idz+1 ,idx] <- myzH[idz+1 ,idx] +
+                        fn.intervalH(
+                            thisH[[idx]][idy, ],
+                            object@crhaz[idy, thisseq],
+                            idz
+                        )
+                    
+                }
             }   
         }
 
@@ -869,16 +784,17 @@ setMethod(
 
 
 
-##Simulate data 
-#maxT <- 20
-#haz1 <-  (1:20)/100
-#haz2 <-  rep(2,20)/100
-#myn<-200
+#Simulate data 
+maxT <- 20
+haz1 <-  (1:20)/100
+haz2 <-  rep(2,20)/100
+myn<-1000
 
-#mysumdta <- fn.spmsim(haz1, haz2, myn)
-#myspm<-survpm(mysumdta, m=2, maxT, ctime=TRUE)
+mysumdta <- fn.spmsim(haz1, haz2, myn)
+myspm<-survpm(mysumdta, m=2, maxT, ctime=TRUE)
 
-#par(mfrow=c(2,2))
-#plot(myspm); plot(myspm,2)
-#plot(myspm,1,2); plot(myspm,2,2)
-#summary(myspm)
+
+par(mfrow=c(2,2))
+plot(myspm); plot(myspm,2)
+plot(myspm,1,2); plot(myspm,2,2)
+summary(myspm)
